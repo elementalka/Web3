@@ -5,6 +5,13 @@ import type { AppState, AuthContext, Role, SessionToken, User } from "../types.j
 import { Store } from "../store.js";
 import { validateTelegramInitData, type TelegramUserPayload } from "./telegramAuth.js";
 import { applyMaturedLimitChange } from "./responsible.js";
+import {
+  createShowcaseSession,
+  restoreShowcaseUser,
+  statelessShowcaseSessionsEnabled,
+  verifyShowcaseSession,
+  type ShowcaseSessionClaims
+} from "./showcaseSession.js";
 
 const sessionTtlMs = 1000 * 60 * 60 * 24 * 14;
 
@@ -23,7 +30,7 @@ export class AuthService {
           ? "demo-support"
           : "demo-admin";
     const user = this.mustFindUser(userId);
-    const token = this.createSession(user.id);
+    const token = this.createSession(user);
     this.store.save();
     return { token: token.token, user };
   }
@@ -63,7 +70,7 @@ export class AuthService {
       this.store.state.users.push(user);
     }
 
-    const token = this.createSession(user.id);
+    const token = this.createSession(user);
     this.store.save();
     return { token: token.token, user };
   }
@@ -113,7 +120,7 @@ export class AuthService {
     }
 
     this.store.state.walletNonces = this.store.state.walletNonces.filter((item) => item !== record);
-    const token = this.createSession(user.id);
+    const token = this.createSession(user);
     this.store.save();
     return { token: token.token, user };
   }
@@ -125,12 +132,24 @@ export class AuthService {
     }
 
     const tokenValue = auth.slice("Bearer ".length);
-    const token = this.store.state.sessions.find((candidate) => candidate.token === tokenValue);
+    let token = this.store.state.sessions.find((candidate) => candidate.token === tokenValue);
+    let showcaseClaims: ShowcaseSessionClaims | undefined;
+
+    if (!token && tokenValue.startsWith("sc1.") && statelessShowcaseSessionsEnabled()) {
+      const verified = verifyShowcaseSession(tokenValue);
+      token = verified?.token;
+      showcaseClaims = verified?.claims;
+    }
     if (!token || new Date(token.expiresAt).getTime() < Date.now()) {
       throw new Error("Session expired");
     }
 
-    const user = this.store.state.users.find((candidate) => candidate.id === token.userId);
+    let user = this.store.state.users.find((candidate) => candidate.id === token.userId);
+    if (!user && showcaseClaims) {
+      user = restoreShowcaseUser(showcaseClaims);
+      this.store.state.users.push(user);
+      this.store.save();
+    }
     if (!user) {
       throw new Error("Session user was not found");
     }
@@ -147,10 +166,14 @@ export class AuthService {
     }
   }
 
-  private createSession(userId: string): SessionToken {
+  private createSession(user: User): SessionToken {
+    if (statelessShowcaseSessionsEnabled()) {
+      return createShowcaseSession(user);
+    }
+
     const token: SessionToken = {
       token: randomUUID(),
-      userId,
+      userId: user.id,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + sessionTtlMs).toISOString()
     };

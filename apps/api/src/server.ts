@@ -16,6 +16,60 @@ export async function buildServer(store = new Store()) {
   const app = Fastify({ logger: true });
   const allowedOrigins = corsOrigins();
 
+  if (store.mode === "redis") {
+    const leases = new WeakMap<object, string>();
+    const releaseRequest = async (request: object) => {
+      const owner = leases.get(request);
+      if (!owner) return;
+      leases.delete(request);
+      await store.releaseRequestLock(owner);
+    };
+
+    app.addHook("onRequest", async (request) => {
+      const owner = await store.acquireRequestLock(() => request.raw.aborted);
+      if (!owner) return;
+      leases.set(request, owner);
+      try {
+        await store.refresh(owner);
+      } catch (error) {
+        leases.delete(request);
+        await store.releaseRequestLock(owner).catch(() => undefined);
+        throw error;
+      }
+    });
+
+    app.addHook("onSend", async (request, _reply, payload) => {
+      try {
+        await store.flush(leases.get(request));
+      } finally {
+        // Vercel may freeze a Function as soon as the response is sent, so the
+        // distributed lease must be released before onSend completes.
+        await releaseRequest(request).catch((error: unknown) => {
+          request.log.error({ error }, "failed to release showcase Redis lock before response");
+        });
+      }
+      return payload;
+    });
+
+    app.addHook("onResponse", async (request) => {
+      await releaseRequest(request).catch((error: unknown) => {
+        request.log.error({ error }, "failed to release showcase Redis lock");
+      });
+    });
+
+    app.addHook("onTimeout", async (request) => {
+      await releaseRequest(request).catch((error: unknown) => {
+        request.log.error({ error }, "failed to release timed-out showcase Redis lock");
+      });
+    });
+
+    app.addHook("onRequestAbort", async (request) => {
+      await releaseRequest(request).catch((error: unknown) => {
+        request.log.error({ error }, "failed to release aborted showcase Redis lock");
+      });
+    });
+  }
+
   await app.register(cors, {
     origin: allowedOrigins.length > 0 ? allowedOrigins : false,
     credentials: allowedOrigins.length > 0
@@ -95,7 +149,10 @@ function statusForError(error: Error): number {
   if (explicitStatus === 429) return 429;
   if (error instanceof ZodError) return 400;
   const message = error.message.toLowerCase();
-  if (message.includes("not configured securely")) return 503;
+  if (
+    message.includes("not configured securely")
+    || message.includes("showcase redis")
+  ) return 503;
   if (
     message.includes("missing bearer") ||
     message.includes("session expired") ||

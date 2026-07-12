@@ -4,13 +4,13 @@
 
 The current repository must be deployed as a **sandbox showcase**, not a real-money casino.
 
-The repository includes a combined Vite + Fastify Vercel adapter. It is suitable for an explicitly disposable showcase: the Node Function keeps JSON state under `/tmp`, so balances, sessions, history and seeds can reset after a cold start or move between instances.
+The repository includes a combined Vite + Fastify Vercel adapter. Auth uses a short-lived signed token. A fully playable multi-instance showcase uses Upstash Redis; without it, balances, history and seeds fall back to instance-local `/tmp` and can reset.
 
 ### Current showcase topology
 
 - Web: static Vite output on Vercel CDN.
 - API: one Node Function at `api/index.ts`, reached through an explicit `/api/*` rewrite.
-- Data: disposable `/tmp` JSON state with test funds only.
+- Data: Upstash Redis JSON state when configured, otherwise disposable `/tmp` test state.
 - Browser/API communication: same HTTPS origin by default.
 
 ### Durable topology
@@ -53,6 +53,8 @@ Do not create a second Vercel project rooted at `apps/web` and do not generate a
 ### API host
 
 - [ ] Showcase uses `DEPLOYMENT_PROFILE=showcase`; the adapter forces `APP_ENV=staging`.
+- [ ] `SHOWCASE_SESSION_SECRET` is unique, at least 32 bytes, present in every deployed environment and stored only in encrypted Vercel settings.
+- [ ] Upstash Redis is linked for a playable public demo; its REST token is server-side only and the database region is close to the Function region.
 - [ ] A split deployment sets `WEB_ORIGIN` to the exact web origin, never `*`.
 - [ ] `DEMO_AUTH_ENABLED=true` only for the disposable showcase; real production physically omits the route.
 - [ ] `SANDBOX_TOOLS_ENABLED=false` in production; internal staging tools require the complete sandbox guard.
@@ -85,6 +87,8 @@ Do not put bot tokens, webhook secrets, server seeds, database credentials or ad
 Run these against the deployed showcase, not only localhost:
 
 - [ ] Health endpoint responds and does not expose secrets or unsafe diagnostic detail.
+- [ ] One demo auth token succeeds on 20 parallel `/api/session` requests without intermittent 401 responses.
+- [ ] Mines start and reveal succeed when intentionally sent through separate Function instances/shared Store clients.
 - [ ] A normal player cannot call admin routes; the optional demo-admin is clearly sandbox-only.
 - [ ] With `APP_ENV=production`, demo auth is 404 and the showcase code `000000` cannot satisfy admin authentication.
 - [ ] Sandbox routes return 404 in the production boundary.

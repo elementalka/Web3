@@ -66,22 +66,11 @@ async function createShowcaseApp(): Promise<FastifyInstance> {
   process.env.DEMO_AUTH_ENABLED ??= "true";
   process.env.SANDBOX_TOOLS_ENABLED ??= "true";
   process.env.MOCK_PAYMENTS_ENABLED ??= "true";
+  process.env.SHOWCASE_STATELESS_SESSIONS = "true";
 
   const dataFile = process.env.SHOWCASE_DATA_FILE?.trim()
     || path.join(tmpdir(), "web3-casino-showcase.json");
   const store = new Store(dataFile);
-
-  // The browser fallback used by the Mini App authenticates Telegram user
-  // 100001. Map it to the pre-funded demo player so a fresh deployment is
-  // immediately playable without creating a fake financial transaction.
-  const demoPlayer = store.state.users.find((user) => user.id === "demo-player");
-  if (demoPlayer) {
-    store.state.users = store.state.users.filter(
-      (user) => user.id === demoPlayer.id || user.telegramId !== "100001"
-    );
-    demoPlayer.telegramId = "100001";
-    store.save();
-  }
 
   const app = await buildServer(store);
 
@@ -112,9 +101,11 @@ export default async function handler(request: IncomingMessage, response: Server
     const app = await getShowcaseApp();
     app.server.emit("request", request, response);
   } catch (error) {
-    writeJson(response, 500, {
+    const message = error instanceof Error ? error.message : "The showcase API could not start";
+    const statusCode = message.toLowerCase().includes("not configured securely") ? 503 : 500;
+    writeJson(response, statusCode, {
       error: "SHOWCASE_BOOT_FAILED",
-      message: error instanceof Error ? error.message : "The showcase API could not start"
+      message
     });
   }
 }

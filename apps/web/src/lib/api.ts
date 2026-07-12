@@ -111,7 +111,7 @@ export interface SessionResponse {
   environment?: {
     appEnv: string;
     demoFunds: boolean;
-    persistence: "file" | "memory" | "database";
+    persistence: "file" | "memory" | "redis" | "database";
   };
 }
 
@@ -152,17 +152,21 @@ export class ApiClient {
   }
 
   async authTelegram(initData?: string): Promise<AuthResponse> {
-    return this.request("/api/auth/telegram", {
+    const path = "/api/auth/telegram";
+    const response = await this.request<AuthResponse>(path, {
       method: "POST",
       body: JSON.stringify({ initData })
     }, false);
+    return requireAuthResponse(response, path);
   }
 
   async authDemo(role: "player" | "admin"): Promise<AuthResponse> {
-    return this.request("/api/auth/demo", {
+    const path = "/api/auth/demo";
+    const response = await this.request<AuthResponse>(path, {
       method: "POST",
       body: JSON.stringify({ role })
     }, false);
+    return requireAuthResponse(response, path);
   }
 
   async walletNonce(walletAddress: string): Promise<{ nonce: string }> {
@@ -173,10 +177,12 @@ export class ApiClient {
   }
 
   async authWallet(walletAddress: string, signature: string, nonce: string): Promise<AuthResponse> {
-    return this.request("/api/auth/wallet/verify", {
+    const path = "/api/auth/wallet/verify";
+    const response = await this.request<AuthResponse>(path, {
       method: "POST",
       body: JSON.stringify({ walletAddress, signature, nonce })
     }, false);
+    return requireAuthResponse(response, path);
   }
 
   session(): Promise<SessionResponse> {
@@ -229,7 +235,17 @@ export class ApiClient {
       init.signal?.removeEventListener("abort", forwardAbort);
     }
 
-    const data = await response.json().catch(() => ({})) as ApiErrorPayload;
+    const isJson = response.headers.get("content-type")?.toLowerCase().includes("application/json") === true;
+    let parsed: unknown;
+    let parseFailed = false;
+    if (isJson) {
+      try {
+        parsed = await response.json();
+      } catch {
+        parseFailed = true;
+      }
+    }
+    const data: ApiErrorPayload = isRecord(parsed) ? parsed : {};
     if (!response.ok) {
       const fallback = response.status === 404
         ? `Demo API route was not found (${path})`
@@ -238,8 +254,30 @@ export class ApiClient {
           : `Request failed (HTTP ${response.status})`;
       throw new ApiRequestError(data.message ?? fallback, response.status, path, data.errorCode, data.requestId);
     }
-    return data as T;
+    if (!isJson || parseFailed || !isRecord(parsed)) {
+      throw new ApiRequestError("Demo API returned an invalid response", 502, path, "INVALID_API_RESPONSE");
+    }
+    return parsed as T;
   }
+}
+
+function requireAuthResponse(value: AuthResponse, path: string): AuthResponse {
+  if (
+    !value
+    || typeof value.token !== "string"
+    || value.token.trim().length === 0
+    || value.token.length > 4096
+    || !value.user
+    || typeof value.user.id !== "string"
+    || value.user.id.trim().length === 0
+  ) {
+    throw new ApiRequestError("Demo API returned an invalid authentication response", 502, path, "INVALID_AUTH_RESPONSE");
+  }
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function createIdempotencyKey(): string {

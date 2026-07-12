@@ -10,7 +10,8 @@
 |---|---|
 | `/`, assets, SPA routes | статический build `apps/web/dist` |
 | `/api/*` | rewrite в одну Node.js Vercel Function `api/index.ts`, передающую исходный URL Fastify |
-| состояние demo | singleton Fastify + файл в `/tmp` внутри конкретного тёплого Function instance |
+| auth demo | HMAC-подписанная часовая сессия, проверяемая любым Function instance |
+| состояние игр | Upstash Redis при наличии integration; иначе disposable `/tmp` конкретного Function instance |
 
 `vercel.json` собирает только frontend; Vercel отдельно компилирует TypeScript Function и её импорты из `apps/api/src`. Runtime-граф использует явные `.js` specifiers и проверяется в режиме `NodeNext`, поэтому скомпилированный ESM запускается в Node без bundler-specific resolution. Node ограничен диапазоном `>=22 <25`; новые проекты Vercel в 2026 используют Node 24 LTS по умолчанию.
 
@@ -27,8 +28,15 @@
    - Output Directory: `apps/web/dist`
    - Framework: Vite
 
-4. Для обычной browser-демонстрации секреты не нужны. Адаптер по умолчанию выбирает `DEPLOYMENT_PROFILE=showcase`, принудительно держит backend в `APP_ENV=staging` и выдаёт предзаполненные test funds demo-игроку.
-5. После деплоя проверь:
+4. В **Project Settings → Environment Variables** добавь обязательный `SHOWCASE_SESSION_SECRET` для Production и Preview. Сгенерировать его можно локально:
+
+   ```bash
+   node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+   ```
+
+   Адаптер по умолчанию выбирает `DEPLOYMENT_PROFILE=showcase`, принудительно держит backend в `APP_ENV=staging` и выдаёт предзаполненные test funds demo-игроку. Без сильного session secret auth намеренно возвращает HTTP 503.
+5. Для полноценного игрового показа подключи **Marketplace → Upstash → Redis** к этому Vercel project. Integration автоматически добавит `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN`. Без Redis landing и auth работают, но баланс, история и многошаговая Mines могут расходиться между Function instances.
+6. После деплоя проверь:
 
    - `https://<deployment>/api/health` → HTTP 200, `appEnv: "staging"`;
    - ответ содержит header `X-Deployment-Profile: showcase-test-funds`;
@@ -39,17 +47,22 @@
 
 ## Переменные showcase
 
-Шаблон находится в корневом `.env.example`. Значения ниже необязательны для one-click browser showcase:
+Шаблон находится в корневом `.env.example`. Для browser showcase обязателен только отдельный session-signing secret; остальные значения можно оставить по умолчанию:
 
 | Переменная | Значение / назначение |
 |---|---|
 | `DEPLOYMENT_PROFILE` | `showcase` или `staging`; по умолчанию `showcase` |
 | `DEMO_AUTH_ENABLED` | `true` для открытия вне Telegram; `false` только при настроенной Telegram auth |
-| `SHOWCASE_DATA_FILE` | Vercel: `/tmp/web3-casino-showcase.json` |
+| `SHOWCASE_SESSION_SECRET` | обязательная случайная строка минимум 32 байта; не использовать повторно для других сервисов |
+| `SHOWCASE_DATA_FILE` | fallback без Redis; Vercel: `/tmp/web3-casino-showcase.json` |
+| `UPSTASH_REDIS_REST_URL` | автоматически выдаётся Upstash integration; включает общий showcase Store |
+| `UPSTASH_REDIS_REST_TOKEN` | секретный REST token Upstash; только server-side environment |
+| `SHOWCASE_REDIS_KEY` | необязательный override namespace; по умолчанию ключ изолирован по `VERCEL_PROJECT_ID` и Vercel environment |
 | `VITE_API_URL` | пусто для combined deployment |
 | `WEB_ORIGIN` | не нужен при same-origin; обязателен для split deployment |
 
 Не добавляй секреты в `.env.example` или Git. В Vercel они задаются отдельно для Preview/Production в Project Settings → Environment Variables.
+Ротация `SHOWCASE_SESSION_SECRET` немедленно инвалидирует выданные showcase-токены; frontend автоматически запросит новую demo-сессию.
 
 ## Telegram Mini App
 
@@ -79,12 +92,15 @@ TELEGRAM_WEBHOOK_SECRET=<long-random-secret>
 
 ## Ограничения persistence
 
-Текущий `Store` сохраняет состояние в `/tmp` и переиспользуется singleton-экземпляром внутри тёплой Function instance. Это удобно для короткой демонстрации, но **не является базой данных**:
+При подключённом Upstash текущий showcase хранит общий JSON snapshot в Redis. Каждый запрос получает короткую distributed lease, загружает актуальный snapshot, а запись выполняется атомарно только владельцем lease. Поэтому параллельные Function instances не теряют ставки, а cold start не стирает баланс, историю или активную Mines session.
 
-- cold start или новый deployment может сбросить данные;
-- несколько параллельных Function instances могут иметь разные балансы и сессии;
-- нет глобальной консистентности, backup, point-in-time recovery и гарантии durability;
-- preview deployments изолированы друг от друга.
+Это решение делает публичное демо последовательным, но **не превращает его в production-базу данных**:
+
+- весь `AppState` читается и записывается одним snapshot, поэтому throughput намеренно ограничен и не рассчитан на большой публичный трафик;
+- нет реляционных constraints, полноценной истории миграций, backup/PITR и финансового reconciliation уровня production;
+- Preview и Production изолированы автоматически, пока `SHOWCASE_REDIS_KEY` не переопределён вручную одинаковым значением;
+- без полной пары Upstash credentials адаптер использует disposable `/tmp`; частично заданная пара считается ошибкой конфигурации и возвращает 503;
+- без Redis cold start или новый Function instance может сбросить либо разветвить demo-state.
 
 Не используй этот профиль для реальных средств, персональных данных, KYC или обещаний сохранности баланса.
 
@@ -119,15 +135,17 @@ npx vercel@latest build
 npx vercel@latest
 ```
 
-Официальные материалы: [Vite on Vercel](https://vercel.com/docs/frameworks/frontend/vite), [Fastify on Vercel](https://vercel.com/docs/frameworks/backend/fastify), [Vercel monorepos](https://vercel.com/docs/monorepos), [Node.js versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions), [Function limits](https://vercel.com/docs/functions/limitations).
+Официальные материалы: [Vite on Vercel](https://vercel.com/docs/frameworks/frontend/vite), [Fastify on Vercel](https://vercel.com/docs/frameworks/backend/fastify), [Vercel monorepos](https://vercel.com/docs/monorepos), [Node.js versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions), [Function limits](https://vercel.com/docs/functions/limitations), [Upstash integration](https://upstash.com/docs/redis/howto/vercelintegration).
 
 ## Частые проблемы
 
+- **Auth проходит, но параллельные `/api/session` получают `401 Session expired`:** проверь наличие одинакового `SHOWCASE_SESSION_SECRET` во всех нужных Vercel environments и сделай redeploy. UUID-сессии в `/tmp` не могут использоваться между Function instances.
+- **После ставки баланс или история сбрасываются, Mines session не находится:** подключи Upstash Redis integration, сделай redeploy и проверь `/api/health`: `storeMode` должен быть `redis`. `/tmp` не является общим хранилищем Vercel Functions.
 - **Одноуровневые `/api/session` возвращают `FUNCTION_INVOCATION_FAILED`, а вложенные `/api/games/config` — 404:** проверь, что задеплоен вариант с `api/index.ts`, первым API rewrite и NodeNext-compatible `.js` imports. Старый `api/[...path].ts` не является надёжным splat-маршрутом для generic Vercel Functions.
 - **После `npm ci` установлено ровно `120 packages`, а `build:vercel` отсутствует в `@web3-casino/api`:** Vercel запускает сборку из `apps/api`. В Project Settings верни Root Directory к корню репозитория (`.`), затем сделай redeploy без build cache.
 - **`build:vercel` падает сразу после `npm ci`, а `tsc` или `vite` не найден:** проверь, что Install Command равен `npm ci --include=dev`. Флаг нужен, если в окружении Vercel задан `NODE_ENV=production`: без него npm пропустит инструменты сборки из `devDependencies`.
 - **Frontend открыт, но висит `Loading`:** проверь `/api/health`; для combined project `VITE_API_URL` должен быть пустым.
 - **CORS в split deployment:** `WEB_ORIGIN` должен точно совпадать со схемой и host frontend.
 - **После env-изменения ничего не поменялось:** сделай redeploy; особенно это важно для `VITE_API_URL`.
-- **Баланс внезапно сбросился:** ожидаемое ограничение `/tmp`; для надёжного состояния нужен Postgres.
+- **`/api/health` показывает `storeMode: "memory"`:** Upstash не подключён к этому environment; добавь integration для Production/Preview и сделай redeploy. Для real-money состояния всё равно нужен Postgres.
 - **API отвечает 503 production gate:** стенд запущен с `APP_ENV=production` или `DEPLOYMENT_PROFILE=production`; не обходи gate без реализации production checklist.

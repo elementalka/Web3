@@ -2,14 +2,15 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Store } from "../src/store";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Store, type RemoteJsonStore } from "../src/store";
 import { LedgerService } from "../src/services/ledger";
 import { GameService, orbitTables, plinkoTables } from "../src/services/games";
 import { ProvablyFairService } from "../src/services/provablyFair";
 import { RiskService } from "../src/services/risk";
 import { applyMaturedLimitChange, requestLimitChange } from "../src/services/responsible";
 import { verifyRecordedBet } from "../src/services/fairVerification";
+import { verifyShowcaseSession } from "../src/services/showcaseSession";
 import { buildServer } from "../src/server";
 
 let store: Store;
@@ -23,6 +24,14 @@ const environmentKeys = [
   "ADMIN_2FA_DISABLED",
   "STORE_MODE",
   "VERCEL",
+  "VERCEL_ENV",
+  "VERCEL_PROJECT_ID",
+  "VERCEL_TARGET_ENV",
+  "SHOWCASE_STATELESS_SESSIONS",
+  "SHOWCASE_SESSION_SECRET",
+  "SHOWCASE_REDIS_KEY",
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
   "WEB_ORIGIN"
 ] as const;
 let previousEnvironment: Partial<Record<typeof environmentKeys[number], string>>;
@@ -35,6 +44,9 @@ beforeEach(() => {
   process.env.SANDBOX_TOOLS_ENABLED = "true";
   process.env.STORE_MODE = "file";
   delete process.env.VERCEL;
+  delete process.env.SHOWCASE_REDIS_KEY;
+  delete process.env.UPSTASH_REDIS_REST_URL;
+  delete process.env.UPSTASH_REDIS_REST_TOKEN;
   storeFile = path.join(os.tmpdir(), `web3-casino-${randomUUID()}.json`);
   store = new Store(storeFile);
 });
@@ -406,6 +418,271 @@ describe("serverless store mode", () => {
     expect(() => memoryStore.save()).not.toThrow();
     expect(memoryStore.state.users.length).toBeGreaterThan(0);
   });
+
+  it("honors an explicit file store even when Redis credentials exist", () => {
+    process.env.STORE_MODE = "file";
+    process.env.UPSTASH_REDIS_REST_URL = "https://example.invalid";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "must-not-be-used";
+
+    expect(new Store(storeFile).mode).toBe("file");
+  });
+
+  it("fails closed when Redis credentials are only partially configured", () => {
+    delete process.env.STORE_MODE;
+    process.env.VERCEL = "1";
+    process.env.UPSTASH_REDIS_REST_URL = "https://example.invalid";
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    expect(() => new Store()).toThrow(/redis is not configured securely/i);
+  });
+
+  it("rejects writes and unlock attempts from a stale Redis lease owner", async () => {
+    process.env.SHOWCASE_REDIS_KEY = "test-stale-owner";
+    const remote = createFakeRemoteStore();
+    const staleStore = new Store(undefined, "redis", remote);
+    const currentStore = new Store(undefined, "redis", remote);
+    const staleOwner = await staleStore.acquireRequestLock();
+    await staleStore.refresh(staleOwner);
+
+    await remote.eval<number>(
+      'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) end return 0',
+      ["test-stale-owner:lock"],
+      [staleOwner!]
+    );
+    const currentOwner = await currentStore.acquireRequestLock();
+    await currentStore.refresh(currentOwner);
+
+    staleStore.state.users[0].balance = 999;
+    staleStore.save();
+    await expect(staleStore.flush(staleOwner)).rejects.toThrow(/lock was lost/i);
+    await staleStore.releaseRequestLock(staleOwner);
+
+    currentStore.state.users[0].balance = 44;
+    currentStore.save();
+    await expect(currentStore.flush(currentOwner)).resolves.toBeUndefined();
+    await currentStore.releaseRequestLock(currentOwner);
+
+    const verifier = new Store(undefined, "redis", remote);
+    const verifierOwner = await verifier.acquireRequestLock();
+    await verifier.refresh(verifierOwner);
+    expect(verifier.state.users[0].balance).toBe(44);
+    await verifier.releaseRequestLock(verifierOwner);
+  });
+
+  it("shares a multi-step Mines flow across isolated Redis-backed apps", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.SHOWCASE_STATELESS_SESSIONS = "true";
+    process.env.SHOWCASE_SESSION_SECRET = "redis-test-showcase-session-secret-32-bytes";
+    const remote = createFakeRemoteStore();
+    const first = await buildServer(new Store(undefined, "redis", remote));
+    const second = await buildServer(new Store(undefined, "redis", remote));
+
+    const auth = await first.inject({ method: "POST", url: "/api/auth/demo", payload: { role: "player" } });
+    const authorization = `Bearer ${auth.json<{ token: string }>().token}`;
+    const started = await first.inject({
+      method: "POST",
+      url: "/api/games/mines/start",
+      headers: { authorization },
+      payload: {
+        idempotencyKey: "redis-mines-start",
+        betAmount: 0.05,
+        minesCount: 3,
+        clientSeed: "redis-test"
+      }
+    });
+    const sessionId = started.json<{ session: { id: string } }>().session.id;
+    const revealed = await second.inject({
+      method: "POST",
+      url: `/api/games/mines/${sessionId}/reveal`,
+      headers: { authorization },
+      payload: { cell: 0 }
+    });
+    await first.close();
+    await second.close();
+
+    expect(auth.statusCode).toBe(200);
+    expect(started.statusCode).toBe(200);
+    expect(revealed.statusCode).toBe(200);
+  });
+
+  it("serializes concurrent writes from isolated Redis-backed apps", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.MOCK_PAYMENTS_ENABLED = "true";
+    process.env.SHOWCASE_STATELESS_SESSIONS = "true";
+    process.env.SHOWCASE_SESSION_SECRET = "redis-concurrency-session-secret-32-bytes";
+    const remote = createFakeRemoteStore(2);
+    const first = await buildServer(new Store(undefined, "redis", remote));
+    const second = await buildServer(new Store(undefined, "redis", remote));
+
+    const auth = await first.inject({ method: "POST", url: "/api/auth/demo", payload: { role: "player" } });
+    const authorization = `Bearer ${auth.json<{ token: string }>().token}`;
+    const [firstDeposit, secondDeposit] = await Promise.all([
+      first.inject({
+        method: "POST",
+        url: "/api/deposits/mock",
+        headers: { authorization },
+        payload: { amount: 1 }
+      }),
+      second.inject({
+        method: "POST",
+        url: "/api/deposits/mock",
+        headers: { authorization },
+        payload: { amount: 1 }
+      })
+    ]);
+    const session = await first.inject({ method: "GET", url: "/api/session", headers: { authorization } });
+    await first.close();
+    await second.close();
+
+    const body = session.json<{ user: { balance: number }; deposits: unknown[] }>();
+    expect(firstDeposit.statusCode).toBe(200);
+    expect(secondDeposit.statusCode).toBe(200);
+    expect(body.user.balance).toBe(42);
+    expect(body.deposits).toHaveLength(2);
+  });
+
+  it("hydrates authoritative Redis state instead of flushing cold-start state", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.MOCK_PAYMENTS_ENABLED = "true";
+    process.env.SHOWCASE_STATELESS_SESSIONS = "true";
+    process.env.SHOWCASE_SESSION_SECRET = "redis-cold-start-session-secret-32-bytes";
+    const remote = createFakeRemoteStore();
+    const warm = await buildServer(new Store(undefined, "redis", remote));
+
+    const auth = await warm.inject({ method: "POST", url: "/api/auth/demo", payload: { role: "player" } });
+    const authorization = `Bearer ${auth.json<{ token: string }>().token}`;
+    await warm.inject({
+      method: "POST",
+      url: "/api/deposits/mock",
+      headers: { authorization },
+      payload: { amount: 3 }
+    });
+
+    const coldStore = new Store(undefined, "redis", remote);
+    coldStore.state.users[0].username = "unhydrated-cold-state";
+    coldStore.save();
+    const cold = await buildServer(coldStore);
+    const session = await cold.inject({ method: "GET", url: "/api/session", headers: { authorization } });
+    await warm.close();
+    await cold.close();
+
+    const body = session.json<{ user: { balance: number; username: string } }>();
+    expect(session.statusCode).toBe(200);
+    expect(body.user.balance).toBe(43);
+    expect(body.user.username).toBe("Telegram Player");
+  });
+});
+
+describe("serverless showcase sessions", () => {
+  it("accepts a signed demo session across isolated function stores", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.SHOWCASE_STATELESS_SESSIONS = "true";
+    process.env.SHOWCASE_SESSION_SECRET = "test-only-showcase-session-secret-32-bytes";
+    process.env.VERCEL_PROJECT_ID = "test-project";
+    process.env.VERCEL_TARGET_ENV = "production";
+    const issuerStore = new Store(undefined, "memory");
+    const verifierStore = new Store(undefined, "memory");
+    const issuer = await buildServer(issuerStore);
+    const verifier = await buildServer(verifierStore);
+
+    const auth = await issuer.inject({
+      method: "POST",
+      url: "/api/auth/demo",
+      payload: { role: "player" }
+    });
+    const token = auth.json<{ token: string }>().token;
+    const session = await verifier.inject({
+      method: "GET",
+      url: "/api/session",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const adminAuth = await issuer.inject({
+      method: "POST",
+      url: "/api/auth/demo",
+      payload: { role: "admin" }
+    });
+    const adminDashboard = await verifier.inject({
+      method: "GET",
+      url: "/api/admin/dashboard",
+      headers: {
+        authorization: `Bearer ${adminAuth.json<{ token: string }>().token}`,
+        "x-admin-2fa": "000000"
+      }
+    });
+
+    await issuer.close();
+    await verifier.close();
+    expect(auth.statusCode).toBe(200);
+    expect(token).toMatch(/^sc1\./);
+    expect(issuerStore.state.sessions).toHaveLength(0);
+    expect(verifierStore.state.sessions).toHaveLength(0);
+    expect(session.statusCode).toBe(200);
+    expect(session.json<{ user: { id: string; balance: number } }>().user)
+      .toMatchObject({ id: "demo-player", balance: 40 });
+    expect(adminDashboard.statusCode).toBe(200);
+  });
+
+  it("rejects tampered and secret-rotated showcase tokens", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.SHOWCASE_STATELESS_SESSIONS = "true";
+    process.env.SHOWCASE_SESSION_SECRET = "first-test-showcase-session-secret-32-bytes";
+    const issuer = await buildServer(new Store(undefined, "memory"));
+    const auth = await issuer.inject({ method: "POST", url: "/api/auth/demo", payload: { role: "player" } });
+    const token = auth.json<{ token: string }>().token;
+    await issuer.close();
+
+    const verifier = await buildServer(new Store(undefined, "memory"));
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const signatureIndex = alphabet.indexOf(token.at(-1)!);
+    expect(signatureIndex % 4).toBe(0);
+    const tampered = `${token.slice(0, -1)}${alphabet[signatureIndex + 1]}`;
+    const tamperedResponse = await verifier.inject({
+      method: "GET",
+      url: "/api/session",
+      headers: { authorization: `Bearer ${tampered}` }
+    });
+    process.env.SHOWCASE_SESSION_SECRET = "rotated-test-showcase-session-secret-32-bytes";
+    const rotatedResponse = await verifier.inject({
+      method: "GET",
+      url: "/api/session",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    await verifier.close();
+
+    expect(tamperedResponse.statusCode).toBe(401);
+    expect(rotatedResponse.statusCode).toBe(401);
+  });
+
+  it("rejects an expired stateless showcase token", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.SHOWCASE_STATELESS_SESSIONS = "true";
+    process.env.SHOWCASE_SESSION_SECRET = "expiry-test-showcase-session-secret-32-bytes";
+    const issuedAt = Date.now();
+    const issuer = await buildServer(new Store(undefined, "memory"));
+    const auth = await issuer.inject({ method: "POST", url: "/api/auth/demo", payload: { role: "player" } });
+    const token = auth.json<{ token: string }>().token;
+    await issuer.close();
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(issuedAt + 61 * 60 * 1000);
+      expect(verifyShowcaseSession(token)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails closed when stateless showcase signing has no strong secret", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.SHOWCASE_STATELESS_SESSIONS = "true";
+    delete process.env.SHOWCASE_SESSION_SECRET;
+    const app = await buildServer(new Store(undefined, "memory"));
+    const response = await app.inject({ method: "POST", url: "/api/auth/demo", payload: { role: "player" } });
+    await app.close();
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json<{ errorCode: string }>().errorCode).toBe("SERVICE_MISCONFIGURED");
+  });
 });
 
 describe("HTTP errors", () => {
@@ -454,3 +731,67 @@ describe("responsible recommendations", () => {
     expect(response.json<{ recommendations: unknown[] }>().recommendations.length).toBeGreaterThan(0);
   });
 });
+
+function createFakeRemoteStore(latencyMs = 0): RemoteJsonStore {
+  const records = new Map<string, unknown>();
+  const expirations = new Map<string, number>();
+  const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+  const delay = async () => {
+    if (latencyMs > 0) await new Promise((resolve) => setTimeout(resolve, latencyMs));
+  };
+  const expireIfNeeded = (key: string) => {
+    const expiresAt = expirations.get(key);
+    if (expiresAt !== undefined && expiresAt <= Date.now()) {
+      records.delete(key);
+      expirations.delete(key);
+    }
+  };
+  const read = <T,>(key: string): T | null => {
+    expireIfNeeded(key);
+    const value = records.get(key);
+    if (value === undefined) return null;
+    if (typeof value === "string") {
+      try {
+        return JSON.parse(value) as T;
+      } catch {
+        return value as T;
+      }
+    }
+    return clone(value) as T;
+  };
+
+  return {
+    async get<TData>(key: string): Promise<TData | null> {
+      await delay();
+      return read<TData>(key);
+    },
+    async set(key: string, value: unknown, options?: { nx?: true; px?: number }): Promise<unknown> {
+      await delay();
+      expireIfNeeded(key);
+      if (options?.nx && records.has(key)) return null;
+      records.set(key, clone(value));
+      if (options?.px) expirations.set(key, Date.now() + options.px);
+      else expirations.delete(key);
+      return "OK";
+    },
+    async eval<TResult>(script: string, keys: string[], args: string[]): Promise<TResult> {
+      await delay();
+      const [lockKey, stateKey] = keys;
+      expireIfNeeded(lockKey);
+      const ownsLock = records.get(lockKey) === args[0];
+      let result = 0;
+      if (script.includes('redis.call("set", KEYS[2]') && stateKey && ownsLock) {
+        records.set(stateKey, args[1]);
+        result = 1;
+      } else if (script.includes('redis.call("pexpire"') && ownsLock) {
+        expirations.set(lockKey, Date.now() + Number(args[1]));
+        result = 1;
+      } else if (script.includes('redis.call("del"') && ownsLock) {
+        records.delete(lockKey);
+        expirations.delete(lockKey);
+        result = 1;
+      }
+      return result as TResult;
+    }
+  };
+}

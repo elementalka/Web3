@@ -17,7 +17,9 @@ Admin routes require the `x-admin-2fa` header in this MVP. In production this sh
 
 ## Data Store
 
-The MVP uses JSON persistence for zero-setup local launch. The state shape in `apps/api/src/types.ts` is intentionally close to tables, so migration to Postgres can map:
+The MVP uses JSON persistence for zero-setup local launch. Local development writes a file; the Vercel showcase can keep the same JSON snapshot in Upstash Redis. Cross-instance requests are serialized with a renewable Redis lease and owner-checked Lua writes, which is sufficient for a small test-funds demo but deliberately not the final high-throughput financial architecture. Without Redis, Vercel falls back to disposable instance-local state.
+
+The state shape in `apps/api/src/types.ts` is intentionally close to tables, so migration to Postgres can map:
 
 - `users`
 - `sessions`

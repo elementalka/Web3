@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   Bell,
@@ -60,23 +60,32 @@ export default function App() {
   const [selectedContent, setSelectedContent] = useState<SessionResponse["contentPages"][number]>();
   const [clientSeed, setClientSeedState] = useState(() => localStorage.getItem("lumina_client_seed") ?? makeClientSeed());
   const [sessionStartedAt] = useState(Date.now());
+  const refreshGeneration = useRef(0);
 
   const refresh = useCallback(async () => {
-    const [sessionResult, configResult, historyResult, recommendationsResult] = await Promise.allSettled([
-      api.session(),
-      api.config(),
+    const generation = ++refreshGeneration.current;
+    const nextSession = await api.session();
+    const optionalRefresh = Promise.allSettled([
       api.history(),
       api.get<RecommendationResponse>("/api/recommendations")
     ]);
-
-    if (sessionResult.status === "rejected") throw sessionResult.reason;
-    if (configResult.status === "rejected") throw configResult.reason;
-
-    setSession(sessionResult.value);
-    setConfig(configResult.value);
-    setActiveMines(sessionResult.value.activeMinesSessions[0]);
-    if (historyResult.status === "fulfilled") setHistory(historyResult.value.bets);
-    if (recommendationsResult.status === "fulfilled") setRecommendations(recommendationsResult.value);
+    const nextConfig = await api.config();
+    if (generation !== refreshGeneration.current) return;
+    setSession(nextSession);
+    setConfig(nextConfig);
+    setActiveMines(nextSession.activeMinesSessions[0]);
+    void optionalRefresh.then(([historyResult, recommendationsResult]) => {
+      if (generation !== refreshGeneration.current) return;
+      if (historyResult.status === "fulfilled" && Array.isArray(historyResult.value.bets)) {
+        setHistory(historyResult.value.bets);
+      }
+      if (
+        recommendationsResult.status === "fulfilled"
+        && Array.isArray(recommendationsResult.value.recommendations)
+      ) {
+        setRecommendations(recommendationsResult.value);
+      }
+    });
   }, [api]);
 
   const saveAuth = useCallback(async (token: string) => {
