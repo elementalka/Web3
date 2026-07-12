@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+!apps/api/.env.example
+!apps/web/.env.example
+apps/api/.data/
+apps/web/.vite/
+.vercel/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+*.zip
+*-review.png

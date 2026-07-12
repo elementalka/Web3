@@ -1,0 +1,33 @@
+{
+  "name": "telegram-web3-casino",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm --workspace @web3-casino/api run dev",
+    "dev:web": "npm --workspace @web3-casino/web run dev",
+    "build": "npm --workspace @web3-casino/api run build && npm --workspace @web3-casino/web run build",
+    "build:vercel": "npm --workspace @web3-casino/web run build",
+    "test": "npm --workspace @web3-casino/api run test",
+    "typecheck": "npm --workspace @web3-casino/web run typecheck && npm --workspace @web3-casino/api run typecheck && npm run typecheck:vercel",
+    "typecheck:vercel": "tsc -p tsconfig.vercel.json --noEmit",
+    "telegram:setup": "npm --workspace @web3-casino/api run telegram:setup",
+    "telegram:check": "npm --workspace @web3-casino/api run telegram:check"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.2"
+  },
+  "overrides": {
+    "esbuild": "0.28.1"
+  }
+}

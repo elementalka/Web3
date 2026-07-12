@@ -1,0 +1,29 @@
+{
+  "name": "@web3-casino/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "esbuild src/server.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server.js --packages=external",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "telegram:setup": "tsx scripts/setupTelegramBot.ts",
+    "telegram:check": "tsx scripts/checkTelegramBot.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "@fastify/rate-limit": "^11.1.0",
+    "dotenv": "^17.2.0",
+    "ethers": "^6.15.0",
+    "fastify": "^5.4.0",
+    "zod": "^4.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "esbuild": "^0.28.1",
+    "tsx": "^4.20.3",
+    "vitest": "^3.2.4"
+  }
+}

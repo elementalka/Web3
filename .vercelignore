@@ -1,0 +1,8 @@
+Web3.zip
+node_modules/
+apps/api/.data/
+apps/api/dist/
+apps/web/dist/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
