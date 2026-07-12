@@ -23,7 +23,7 @@ Lumina is now a deployable product showcase: the five games, account area, respo
 | Responsible gambling | Ready | Partial | Daily limits, delayed increases, self-exclusion, neutral safety pulse and a 30-minute reality check are implemented. Legal review and durable history remain. |
 | Support/content/notifications | Ready | Partial | User-facing workflows and data foundations are present. Production needs delivery providers, full back-office workflow and immutable CMS versions. |
 | RU/EN and accessibility | Ready | Partial | Core UI is bilingual, responsive, keyboard-oriented and reduced-motion aware. Formal WCAG 2.1 AA audit remains. |
-| CI and dependencies | Ready | Partial | Clean install, typecheck, 39 tests, build and dependency audit run in GitHub Actions. Production adds SAST, secret scanning and approval gates. |
+| CI and dependencies | Ready | Partial | Clean install, typecheck, 41 tests, build and dependency audit run in GitHub Actions. Production adds SAST, secret scanning and approval gates. |
 | Vercel deployment | Ready | Blocked | One project serves Vite and `api/index.ts`; signed showcase sessions work across Functions, while optional Upstash Redis shares demo game state under a distributed lease. The adapter remains showcase-only. |
 | EVM payments/contracts | Blocked | Blocked | No real deposit indexer, treasury contract, withdrawal signer or external smart-contract audit is included. |
 | Compliance/anti-fraud | Blocked | Blocked | Jurisdiction, age/KYC/AML/sanctions/geo providers and operating procedures are not selected. |

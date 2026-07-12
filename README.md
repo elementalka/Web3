@@ -49,7 +49,7 @@ npm audit --audit-level=high
 
 В Vercel Environment Variables обязательно задай `SHOWCASE_SESSION_SECRET` случайной строкой минимум 32 байта. Она подписывает часовые showcase-сессии, чтобы auth работал между параллельными Function instances; значение нельзя коммитить в Git.
 
-Для общей истории, баланса и многошаговой Mines между Function instances подключи к проекту бесплатную Upstash Redis integration из Vercel Marketplace. Переменные `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN` подхватываются автоматически; без них состояние остаётся disposable и instance-local.
+Для общей истории, баланса и многошаговой Mines между Function instances подключи к проекту бесплатную Upstash Redis integration из Vercel Marketplace. Адаптер поддерживает как актуальные `KV_REST_API_URL` / `KV_REST_API_TOKEN`, так и прежние `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`; без полной пары состояние остаётся disposable и instance-local.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Felementalka%2FWeb3&project-name=web3-casino-showcase&repository-name=Web3)
 

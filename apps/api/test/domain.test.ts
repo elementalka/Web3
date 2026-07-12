@@ -32,6 +32,8 @@ const environmentKeys = [
   "SHOWCASE_REDIS_KEY",
   "UPSTASH_REDIS_REST_URL",
   "UPSTASH_REDIS_REST_TOKEN",
+  "KV_REST_API_URL",
+  "KV_REST_API_TOKEN",
   "WEB_ORIGIN"
 ] as const;
 let previousEnvironment: Partial<Record<typeof environmentKeys[number], string>>;
@@ -47,6 +49,8 @@ beforeEach(() => {
   delete process.env.SHOWCASE_REDIS_KEY;
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  delete process.env.KV_REST_API_URL;
+  delete process.env.KV_REST_API_TOKEN;
   storeFile = path.join(os.tmpdir(), `web3-casino-${randomUUID()}.json`);
   store = new Store(storeFile);
 });
@@ -434,6 +438,26 @@ describe("serverless store mode", () => {
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
     expect(() => new Store()).toThrow(/redis is not configured securely/i);
+  });
+
+  it("recognizes the current Vercel Marketplace Redis environment", () => {
+    delete process.env.STORE_MODE;
+    process.env.VERCEL = "1";
+    process.env.KV_REST_API_URL = "https://example.invalid";
+    process.env.KV_REST_API_TOKEN = "marketplace-test-token";
+
+    expect(new Store().mode).toBe("redis");
+  });
+
+  it("prefers a complete Marketplace pair over a stale partial legacy pair", () => {
+    delete process.env.STORE_MODE;
+    process.env.VERCEL = "1";
+    process.env.UPSTASH_REDIS_REST_URL = "https://stale-legacy.invalid";
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    process.env.KV_REST_API_URL = "https://marketplace.example.invalid";
+    process.env.KV_REST_API_TOKEN = "marketplace-test-token";
+
+    expect(() => new Store()).not.toThrow();
   });
 
   it("rejects writes and unlock attempts from a stale Redis lease owner", async () => {

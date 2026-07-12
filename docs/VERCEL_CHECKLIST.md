@@ -54,7 +54,7 @@ Do not create a second Vercel project rooted at `apps/web` and do not generate a
 
 - [ ] Showcase uses `DEPLOYMENT_PROFILE=showcase`; the adapter forces `APP_ENV=staging`.
 - [ ] `SHOWCASE_SESSION_SECRET` is unique, at least 32 bytes, present in every deployed environment and stored only in encrypted Vercel settings.
-- [ ] Upstash Redis is linked for a playable public demo; its REST token is server-side only and the database region is close to the Function region.
+- [ ] Upstash Redis is linked for a playable public demo; either `KV_REST_API_*` or `UPSTASH_REDIS_REST_*` is present as a complete pair, the REST token is server-side only, and the database region is close to the Function region.
 - [ ] A split deployment sets `WEB_ORIGIN` to the exact web origin, never `*`.
 - [ ] `DEMO_AUTH_ENABLED=true` only for the disposable showcase; real production physically omits the route.
 - [ ] `SANDBOX_TOOLS_ENABLED=false` in production; internal staging tools require the complete sandbox guard.

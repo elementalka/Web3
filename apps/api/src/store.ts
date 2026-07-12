@@ -333,18 +333,16 @@ function resolveStoreMode(explicitFilePath?: string): StoreMode {
 }
 
 function redisEnvironmentPresent(): boolean {
-  return Boolean(
-    process.env.UPSTASH_REDIS_REST_URL?.trim()
-    || process.env.UPSTASH_REDIS_REST_TOKEN?.trim()
-  );
+  return [
+    process.env.UPSTASH_REDIS_REST_URL,
+    process.env.UPSTASH_REDIS_REST_TOKEN,
+    process.env.KV_REST_API_URL,
+    process.env.KV_REST_API_TOKEN
+  ].some((value) => Boolean(value?.trim()));
 }
 
 function createRedisClient(): RemoteJsonStore {
-  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
-  if (!url || !token) {
-    throw new Error("Showcase Redis is not configured securely");
-  }
+  const { url, token } = redisCredentials();
   const redis = new Redis({ url, token });
   return {
     get<TData>(key: string): Promise<TData | null> {
@@ -360,6 +358,22 @@ function createRedisClient(): RemoteJsonStore {
       return redis.eval<string[], TResult>(script, keys, args);
     }
   };
+}
+
+function redisCredentials(): { url: string; token: string } {
+  const marketplaceUrl = process.env.KV_REST_API_URL?.trim();
+  const marketplaceToken = process.env.KV_REST_API_TOKEN?.trim();
+  if (marketplaceUrl && marketplaceToken) {
+    return { url: marketplaceUrl, token: marketplaceToken };
+  }
+
+  const upstashUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (upstashUrl && upstashToken) {
+    return { url: upstashUrl, token: upstashToken };
+  }
+
+  throw new Error("Showcase Redis is not configured securely");
 }
 
 function normalizeState(state: AppState): AppState {

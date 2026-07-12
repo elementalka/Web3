@@ -35,7 +35,7 @@
    ```
 
    Адаптер по умолчанию выбирает `DEPLOYMENT_PROFILE=showcase`, принудительно держит backend в `APP_ENV=staging` и выдаёт предзаполненные test funds demo-игроку. Без сильного session secret auth намеренно возвращает HTTP 503.
-5. Для полноценного игрового показа подключи **Marketplace → Upstash → Redis** к этому Vercel project. Integration автоматически добавит `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN`. Без Redis landing и auth работают, но баланс, история и многошаговая Mines могут расходиться между Function instances.
+5. Для полноценного игрового показа подключи **Marketplace → Upstash → Redis** к этому Vercel project. Актуальная integration добавляет `KV_REST_API_URL` и `KV_REST_API_TOKEN`; адаптер также понимает прежние `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN`. Без Redis landing и auth работают, но баланс, история и многошаговая Mines могут расходиться между Function instances.
 6. После деплоя проверь:
 
    - `https://<deployment>/api/health` → HTTP 200, `appEnv: "staging"`;
@@ -57,6 +57,8 @@
 | `SHOWCASE_DATA_FILE` | fallback без Redis; Vercel: `/tmp/web3-casino-showcase.json` |
 | `UPSTASH_REDIS_REST_URL` | автоматически выдаётся Upstash integration; включает общий showcase Store |
 | `UPSTASH_REDIS_REST_TOKEN` | секретный REST token Upstash; только server-side environment |
+| `KV_REST_API_URL` | актуальное имя REST URL из Vercel Marketplace; альтернатива `UPSTASH_REDIS_REST_URL` |
+| `KV_REST_API_TOKEN` | актуальное имя REST token из Vercel Marketplace; альтернатива `UPSTASH_REDIS_REST_TOKEN` |
 | `SHOWCASE_REDIS_KEY` | необязательный override namespace; по умолчанию ключ изолирован по `VERCEL_PROJECT_ID` и Vercel environment |
 | `VITE_API_URL` | пусто для combined deployment |
 | `WEB_ORIGIN` | не нужен при same-origin; обязателен для split deployment |
