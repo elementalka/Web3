@@ -22,7 +22,7 @@
 2. Оставь **Root Directory** равным корню репозитория (`.`), не `apps/web`.
 3. Настройки из `vercel.json` должны определиться автоматически:
 
-   - Install Command: `npm ci`
+   - Install Command: `npm ci --include=dev`
    - Build Command: `npm run build:vercel`
    - Output Directory: `apps/web/dist`
    - Framework: Vite
@@ -123,6 +123,8 @@ npx vercel@latest
 
 ## Частые проблемы
 
+- **После `npm ci` установлено ровно `120 packages`, а `build:vercel` отсутствует в `@web3-casino/api`:** Vercel запускает сборку из `apps/api`. В Project Settings верни Root Directory к корню репозитория (`.`), затем сделай redeploy без build cache.
+- **`build:vercel` падает сразу после `npm ci`, а `tsc` или `vite` не найден:** проверь, что Install Command равен `npm ci --include=dev`. Флаг нужен, если в окружении Vercel задан `NODE_ENV=production`: без него npm пропустит инструменты сборки из `devDependencies`.
 - **Frontend открыт, но висит `Loading`:** проверь `/api/health`; для combined project `VITE_API_URL` должен быть пустым.
 - **CORS в split deployment:** `WEB_ORIGIN` должен точно совпадать со схемой и host frontend.
 - **После env-изменения ничего не поменялось:** сделай redeploy; особенно это важно для `VITE_API_URL`.
