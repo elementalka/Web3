@@ -4,13 +4,13 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 import { ZodError } from "zod";
-import { Store } from "./store";
-import { registerAuthRoutes } from "./routes/authRoutes";
-import { registerUserRoutes } from "./routes/userRoutes";
-import { registerGameRoutes } from "./routes/gameRoutes";
-import { registerAdminRoutes } from "./routes/adminRoutes";
-import { registerSandboxRoutes } from "./routes/sandboxRoutes";
-import { registerTelegramRoutes } from "./routes/telegramRoutes";
+import { Store } from "./store.js";
+import { registerAuthRoutes } from "./routes/authRoutes.js";
+import { registerUserRoutes } from "./routes/userRoutes.js";
+import { registerGameRoutes } from "./routes/gameRoutes.js";
+import { registerAdminRoutes } from "./routes/adminRoutes.js";
+import { registerSandboxRoutes } from "./routes/sandboxRoutes.js";
+import { registerTelegramRoutes } from "./routes/telegramRoutes.js";
 
 export async function buildServer(store = new Store()) {
   const app = Fastify({ logger: true });

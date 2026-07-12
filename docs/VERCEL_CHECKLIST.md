@@ -9,7 +9,7 @@ The repository includes a combined Vite + Fastify Vercel adapter. It is suitable
 ### Current showcase topology
 
 - Web: static Vite output on Vercel CDN.
-- API: one catch-all Node Function at `api/[...path].ts`.
+- API: one Node Function at `api/index.ts`, reached through an explicit `/api/*` rewrite.
 - Data: disposable `/tmp` JSON state with test funds only.
 - Browser/API communication: same HTTPS origin by default.
 
@@ -34,7 +34,7 @@ Use the checked-in root `vercel.json`:
 |---|---|
 | Framework preset | Vite |
 | Root directory | `.` |
-| Install command | `npm ci` |
+| Install command | `npm ci --include=dev` |
 | Build command | `npm run build:vercel` |
 | Output directory | `apps/web/dist` |
 | Node.js | 22–24 |

@@ -5,12 +5,16 @@
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "apps/web/dist",
   "functions": {
-    "api/[...path].ts": {
+    "api/index.ts": {
       "maxDuration": 60,
       "supportsCancellation": true
     }
   },
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api?__path=$1"
+    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"

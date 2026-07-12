@@ -1,11 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { Store } from "../store";
-import { AuthService } from "../services/auth";
-import { LedgerService } from "../services/ledger";
-import { addAnalytics, addAudit } from "../services/audit";
-import { assertDepositAllowed, requestLimitChange } from "../services/responsible";
+import type { Store } from "../store.js";
+import { AuthService } from "../services/auth.js";
+import { LedgerService } from "../services/ledger.js";
+import { addAnalytics, addAudit } from "../services/audit.js";
+import { assertDepositAllowed, requestLimitChange } from "../services/responsible.js";
 
 export async function registerUserRoutes(app: FastifyInstance, store: Store): Promise<void> {
   const auth = new AuthService(store);

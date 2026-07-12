@@ -2,8 +2,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import { buildServer } from "../apps/api/src/server";
-import { Store } from "../apps/api/src/store";
+import { buildServer } from "../apps/api/src/server.js";
+import { Store } from "../apps/api/src/store.js";
+import { restoreApiRequestUrl } from "../apps/api/src/services/vercelUrl.js";
 
 const SHOWCASE_PROFILES = new Set(["showcase", "staging"]);
 const PRODUCTION_ENVIRONMENT_REQUIREMENTS = [
@@ -100,6 +101,8 @@ function getShowcaseApp(): Promise<FastifyInstance> {
 }
 
 export default async function handler(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  request.url = restoreApiRequestUrl(request.url);
+
   if (productionWasRequested()) {
     productionGate(response);
     return;

@@ -1,10 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { ethers } from "ethers";
 import type { FastifyRequest } from "fastify";
-import type { AppState, AuthContext, Role, SessionToken, User } from "../types";
-import { Store } from "../store";
-import { validateTelegramInitData, type TelegramUserPayload } from "./telegramAuth";
-import { applyMaturedLimitChange } from "./responsible";
+import type { AppState, AuthContext, Role, SessionToken, User } from "../types.js";
+import { Store } from "../store.js";
+import { validateTelegramInitData, type TelegramUserPayload } from "./telegramAuth.js";
+import { applyMaturedLimitChange } from "./responsible.js";
 
 const sessionTtlMs = 1000 * 60 * 60 * 24 * 14;
 

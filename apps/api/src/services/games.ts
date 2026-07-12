@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { AppState, FairProof, GameBet, GameId, MinesSession, User } from "../types";
-import { LedgerService, roundMoney } from "./ledger";
-import { ProvablyFairService } from "./provablyFair";
-import { RiskService } from "./risk";
-import { addAnalytics } from "./audit";
+import type { AppState, FairProof, GameBet, GameId, MinesSession, User } from "../types.js";
+import { LedgerService, roundMoney } from "./ledger.js";
+import { ProvablyFairService } from "./provablyFair.js";
+import { RiskService } from "./risk.js";
+import { addAnalytics } from "./audit.js";
 
 export class GameService {
   private readonly ledger: LedgerService;

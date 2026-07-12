@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import type { Store } from "../store";
-import { addAnalytics } from "../services/audit";
-import { TelegramBotService, type TelegramUpdate } from "../services/telegramBot";
+import type { Store } from "../store.js";
+import { addAnalytics } from "../services/audit.js";
+import { TelegramBotService, type TelegramUpdate } from "../services/telegramBot.js";
 
 export async function registerTelegramRoutes(app: FastifyInstance, store: Store): Promise<void> {
   app.post("/api/telegram/webhook", async (request, reply) => {

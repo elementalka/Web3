@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AppState, Currency, LedgerEntry, User, Withdrawal } from "../types";
+import type { AppState, Currency, LedgerEntry, User, Withdrawal } from "../types.js";
 
 export class LedgerService {
   constructor(private readonly state: AppState) {}

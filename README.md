@@ -45,7 +45,7 @@ npm audit --audit-level=high
 
 ## Vercel showcase
 
-Импортируй репозиторий в Vercel с Root Directory `.`. Корневой `vercel.json` соберёт Vite frontend и подключит Fastify как catch-all Node Function на `/api/*`; для same-origin deployment `VITE_API_URL` оставь пустым.
+Импортируй репозиторий в Vercel с Root Directory `.`. Корневой `vercel.json` соберёт Vite frontend и направит `/api/*` через явный rewrite в единственную Fastify Node Function `api/index.ts`; для same-origin deployment `VITE_API_URL` оставь пустым.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Felementalka%2FWeb3&project-name=web3-casino-showcase&repository-name=Web3)
 

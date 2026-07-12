@@ -1,11 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { Store } from "../store";
-import { AuthService } from "../services/auth";
-import { LedgerService } from "../services/ledger";
-import { SandboxService } from "../services/sandbox";
-import { addAudit } from "../services/audit";
-import { assertSecondFactor } from "./adminRoutes";
+import type { Store } from "../store.js";
+import { AuthService } from "../services/auth.js";
+import { LedgerService } from "../services/ledger.js";
+import { SandboxService } from "../services/sandbox.js";
+import { addAudit } from "../services/audit.js";
+import { assertSecondFactor } from "./adminRoutes.js";
 
 export async function registerSandboxRoutes(app: FastifyInstance, store: Store): Promise<void> {
   const auth = new AuthService(store);

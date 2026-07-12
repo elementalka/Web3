@@ -2,11 +2,11 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import type { Store } from "../store";
-import { AuthService } from "../services/auth";
-import { LedgerService } from "../services/ledger";
-import { RiskService } from "../services/risk";
-import { addAudit } from "../services/audit";
+import type { Store } from "../store.js";
+import { AuthService } from "../services/auth.js";
+import { LedgerService } from "../services/ledger.js";
+import { RiskService } from "../services/risk.js";
+import { addAudit } from "../services/audit.js";
 
 export async function registerAdminRoutes(app: FastifyInstance, store: Store): Promise<void> {
   const auth = new AuthService(store);

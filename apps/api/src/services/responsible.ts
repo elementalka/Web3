@@ -1,4 +1,4 @@
-import type { AppState, ResponsibleLimits, User } from "../types";
+import type { AppState, ResponsibleLimits, User } from "../types.js";
 
 const limitCoolingOffMs = 24 * 60 * 60 * 1000;
 const rollingDayMs = 24 * 60 * 60 * 1000;

@@ -115,6 +115,25 @@ export interface SessionResponse {
   };
 }
 
+interface ApiErrorPayload {
+  message?: string;
+  errorCode?: string;
+  requestId?: string;
+}
+
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly path: string,
+    public readonly errorCode?: string,
+    public readonly requestId?: string
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
 export class ApiClient {
   private readonly baseUrl = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
@@ -122,6 +141,14 @@ export class ApiClient {
 
   setToken(token: string): void {
     this.token = token;
+  }
+
+  clearToken(): void {
+    this.token = undefined;
+  }
+
+  hasToken(): boolean {
+    return Boolean(this.token);
   }
 
   async authTelegram(initData?: string): Promise<AuthResponse> {
@@ -177,10 +204,39 @@ export class ApiClient {
     headers.set("Content-Type", "application/json");
     if (needsAuth && this.token) headers.set("Authorization", `Bearer ${this.token}`);
     if (path.startsWith("/api/admin") || path.startsWith("/api/sandbox")) headers.set("x-admin-2fa", "000000");
-    const response = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
-    const data = await response.json().catch(() => ({}));
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 15_000);
+    const forwardAbort = () => controller.abort(init.signal?.reason);
+    if (init.signal?.aborted) forwardAbort();
+    else init.signal?.addEventListener("abort", forwardAbort, { once: true });
+
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, { ...init, headers, signal: controller.signal });
+    } catch {
+      throw new ApiRequestError(
+        timedOut ? "Demo API did not respond in time" : "Could not reach the demo API",
+        timedOut ? 408 : 0,
+        path,
+        timedOut ? "REQUEST_TIMEOUT" : "NETWORK_ERROR"
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      init.signal?.removeEventListener("abort", forwardAbort);
+    }
+
+    const data = await response.json().catch(() => ({})) as ApiErrorPayload;
     if (!response.ok) {
-      throw new Error(data.message ?? "Request failed");
+      const fallback = response.status === 404
+        ? `Demo API route was not found (${path})`
+        : response.status >= 500
+          ? `Demo API is temporarily unavailable (HTTP ${response.status})`
+          : `Request failed (HTTP ${response.status})`;
+      throw new ApiRequestError(data.message ?? fallback, response.status, path, data.errorCode, data.requestId);
     }
     return data as T;
   }

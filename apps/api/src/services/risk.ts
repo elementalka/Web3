@@ -1,6 +1,6 @@
-import type { AppState, GameId, GameLimit, RiskSnapshot, User } from "../types";
-import { roundMoney } from "./ledger";
-import { applyMaturedLimitChange, assertDailyLossAllowsBet } from "./responsible";
+import type { AppState, GameId, GameLimit, RiskSnapshot, User } from "../types.js";
+import { roundMoney } from "./ledger.js";
+import { applyMaturedLimitChange, assertDailyLossAllowsBet } from "./responsible.js";
 
 export class RiskService {
   constructor(private readonly state: AppState) {}

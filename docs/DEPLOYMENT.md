@@ -9,10 +9,10 @@
 | URL | Реализация |
 |---|---|
 | `/`, assets, SPA routes | статический build `apps/web/dist` |
-| `/api/*` | одна Node.js Vercel Function `api/[...path].ts`, передающая запросы Fastify |
+| `/api/*` | rewrite в одну Node.js Vercel Function `api/index.ts`, передающую исходный URL Fastify |
 | состояние demo | singleton Fastify + файл в `/tmp` внутри конкретного тёплого Function instance |
 
-`vercel.json` собирает только frontend; Vercel отдельно компилирует TypeScript Function и её импорты из `apps/api/src`. Node ограничен диапазоном `>=22 <25`; новые проекты Vercel в 2026 используют Node 24 LTS по умолчанию.
+`vercel.json` собирает только frontend; Vercel отдельно компилирует TypeScript Function и её импорты из `apps/api/src`. Runtime-граф использует явные `.js` specifiers и проверяется в режиме `NodeNext`, поэтому скомпилированный ESM запускается в Node без bundler-specific resolution. Node ограничен диапазоном `>=22 <25`; новые проекты Vercel в 2026 используют Node 24 LTS по умолчанию.
 
 ## Быстрый деплой из GitHub
 
@@ -123,6 +123,7 @@ npx vercel@latest
 
 ## Частые проблемы
 
+- **Одноуровневые `/api/session` возвращают `FUNCTION_INVOCATION_FAILED`, а вложенные `/api/games/config` — 404:** проверь, что задеплоен вариант с `api/index.ts`, первым API rewrite и NodeNext-compatible `.js` imports. Старый `api/[...path].ts` не является надёжным splat-маршрутом для generic Vercel Functions.
 - **После `npm ci` установлено ровно `120 packages`, а `build:vercel` отсутствует в `@web3-casino/api`:** Vercel запускает сборку из `apps/api`. В Project Settings верни Root Directory к корню репозитория (`.`), затем сделай redeploy без build cache.
 - **`build:vercel` падает сразу после `npm ci`, а `tsc` или `vite` не найден:** проверь, что Install Command равен `npm ci --include=dev`. Флаг нужен, если в окружении Vercel задан `NODE_ENV=production`: без него npm пропустит инструменты сборки из `devDependencies`.
 - **Frontend открыт, но висит `Loading`:** проверь `/api/health`; для combined project `VITE_API_URL` должен быть пустым.

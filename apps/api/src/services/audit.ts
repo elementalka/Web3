@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AppState } from "../types";
+import type { AppState } from "../types.js";
 
 export function addAudit(state: AppState, actorUserId: string, action: string, target?: string, metadata?: Record<string, unknown>): void {
   state.auditLogs.unshift({

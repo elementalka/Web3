@@ -1,7 +1,7 @@
-import type { AppState, GameBet, User } from "../types";
-import { orbitOutcome, plinkoTables, sampleWithoutReplacement, signals } from "./games";
-import { roundMoney } from "./ledger";
-import { ProvablyFairService } from "./provablyFair";
+import type { AppState, GameBet, User } from "../types.js";
+import { orbitOutcome, plinkoTables, sampleWithoutReplacement, signals } from "./games.js";
+import { roundMoney } from "./ledger.js";
+import { ProvablyFairService } from "./provablyFair.js";
 
 export interface RecordedBetVerification {
   betId: string;

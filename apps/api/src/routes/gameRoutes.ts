@@ -1,11 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { Store } from "../store";
-import type { GameId } from "../types";
-import { AuthService } from "../services/auth";
-import { GameService, signals } from "../services/games";
-import { ProvablyFairService } from "../services/provablyFair";
-import { verifyRecordedBet } from "../services/fairVerification";
+import type { Store } from "../store.js";
+import type { GameId } from "../types.js";
+import { AuthService } from "../services/auth.js";
+import { GameService, signals } from "../services/games.js";
+import { ProvablyFairService } from "../services/provablyFair.js";
+import { verifyRecordedBet } from "../services/fairVerification.js";
 
 const gameIdSchema = z.enum(["dice", "mines", "plinko", "orbit", "signal"]);
 const baseBet = {

@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import type { AppState, GameConfig, GameId, User } from "./types";
+import type { AppState, GameConfig, GameId, User } from "./types.js";
 
 const gameIds: GameId[] = ["dice", "mines", "plinko", "orbit", "signal"];
 

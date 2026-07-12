@@ -1,5 +1,5 @@
-import type { AppState, GameId } from "../types";
-import { GameService } from "./games";
+import type { AppState, GameId } from "../types.js";
+import { GameService } from "./games.js";
 
 export class SandboxService {
   constructor(private readonly state: AppState) {}

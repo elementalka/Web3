@@ -24,7 +24,7 @@ import {
   SandboxRibbon,
   type RunAction
 } from "./components/Shared";
-import { ApiClient, type Bet, type GameConfigResponse, type GameId, type MinesSession, type SessionResponse } from "./lib/api";
+import { ApiClient, ApiRequestError, type Bet, type GameConfigResponse, type GameId, type MinesSession, type SessionResponse } from "./lib/api";
 import { bootTelegram } from "./lib/telegram";
 import { AdminView } from "./views/Admin";
 import { FairView } from "./views/Fair";
@@ -62,23 +62,35 @@ export default function App() {
   const [sessionStartedAt] = useState(Date.now());
 
   const refresh = useCallback(async () => {
-    const [nextSession, nextConfig, nextHistory, nextRecommendations] = await Promise.all([
+    const [sessionResult, configResult, historyResult, recommendationsResult] = await Promise.allSettled([
       api.session(),
       api.config(),
       api.history(),
       api.get<RecommendationResponse>("/api/recommendations")
     ]);
-    setSession(nextSession);
-    setConfig(nextConfig);
-    setHistory(nextHistory.bets);
-    setActiveMines(nextSession.activeMinesSessions[0]);
-    setRecommendations(nextRecommendations);
+
+    if (sessionResult.status === "rejected") throw sessionResult.reason;
+    if (configResult.status === "rejected") throw configResult.reason;
+
+    setSession(sessionResult.value);
+    setConfig(configResult.value);
+    setActiveMines(sessionResult.value.activeMinesSessions[0]);
+    if (historyResult.status === "fulfilled") setHistory(historyResult.value.bets);
+    if (recommendationsResult.status === "fulfilled") setRecommendations(recommendationsResult.value);
   }, [api]);
 
   const saveAuth = useCallback(async (token: string) => {
     api.setToken(token);
     localStorage.setItem("lumina_token", token);
-    await refresh();
+    try {
+      await refresh();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        api.clearToken();
+        localStorage.removeItem("lumina_token");
+      }
+      throw error;
+    }
   }, [api, refresh]);
 
   const authenticate = useCallback(async (role: "player" | "admin" = "player") => {
@@ -86,7 +98,11 @@ export default function App() {
     setMessage("");
     try {
       const webApp = bootTelegram();
-      const auth = role === "admin" ? await api.authDemo("admin") : await api.authTelegram(webApp?.initData);
+      const auth = role === "admin"
+        ? await api.authDemo("admin")
+        : webApp?.initData
+          ? await api.authTelegram(webApp.initData)
+          : await api.authDemo("player");
       await saveAuth(auth.token);
       if (role === "admin") setView("admin");
     } catch (error) {
@@ -122,10 +138,21 @@ export default function App() {
   useEffect(() => {
     bootTelegram();
     const reviewAdmin = import.meta.env.DEV && new URLSearchParams(window.location.search).get("reviewAdmin") === "1";
-    refresh()
-      .catch(() => authenticate(reviewAdmin ? "admin" : "player"))
+    const initialize = api.hasToken()
+      ? refresh().catch((error: unknown) => {
+        if (error instanceof ApiRequestError && error.status === 401) {
+          api.clearToken();
+          localStorage.removeItem("lumina_token");
+          return authenticate(reviewAdmin ? "admin" : "player");
+        }
+        setMessage(error instanceof Error ? error.message : "Demo API initialization failed");
+        setSession(undefined);
+      })
+      : authenticate(reviewAdmin ? "admin" : "player");
+
+    void initialize
       .finally(() => setInitializing(false));
-  }, [authenticate, refresh]);
+  }, [api, authenticate, refresh]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowRealityCheck(true), 30 * 60 * 1000);

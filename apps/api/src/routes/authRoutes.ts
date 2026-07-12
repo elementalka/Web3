@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { AuthService } from "../services/auth";
-import type { Store } from "../store";
+import { AuthService } from "../services/auth.js";
+import type { Store } from "../store.js";
 
 export async function registerAuthRoutes(app: FastifyInstance, store: Store): Promise<void> {
   const auth = new AuthService(store);

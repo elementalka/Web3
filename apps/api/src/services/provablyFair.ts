@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
-import type { AppState, FairProof, GameId, RevealedSeed } from "../types";
+import type { AppState, FairProof, GameId, RevealedSeed } from "../types.js";
 
 export class ProvablyFairService {
   constructor(private readonly state: AppState) {}
